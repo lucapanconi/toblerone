@@ -1,5 +1,5 @@
 # Topological Boundary Line Estimation using Recurrence of Neighbouring Emissions
-Topological Boundary Line Estimation using Recurrence of Neighbouring Emissions, or TOBLERONE, is a topological data analysis algorithm which uses persistent homology to identify objects of arbitrary shape in grayscale images. The programme is run entirely through RStudio and requires only the [**tiff**](https://cran.r-project.org/web/packages/tiff/index.html) package to function.
+Topological Boundary Line Estimation using Recurrence of Neighbouring Emissions, or TOBLERONE, is a topological data analysis algorithm which uses persistent homology to identify objects of arbitrary shape in grayscale images. The programme is run entirely through [**RStudio**](https://www.rstudio.com/products/rstudio/) and requires only the [**tiff**](https://cran.r-project.org/web/packages/tiff/index.html) package to function.
 
 ## Installation
 The package can be installed using pre-existing functions in the [**devtools**](https://cran.r-project.org/web/packages/devtools/index.html) package. It is highly recommended that you use **RStudio**. If you do not have **devtools** installed, enter the following line into the command prompt:
@@ -18,7 +18,7 @@ In the example code below, we implement the TOBLERONE library, upload an example
 library(toblerone)
 
 #Upload example image.
-example_image <- readTIFF("C:/Users/user_name/Desktop/image_folder/example_image.tif")
+example_image <- tiff::readTIFF("C:/Users/user_name/Desktop/image_folder/example_image.tif")
 
 #Define example image name.
 example_image_name <- "example_image"
@@ -30,6 +30,19 @@ output_location <- "C:/Users/user_name/Desktop/output_folder/"
 toblerone(example_image, example_image_name, output_location)
 ```
 From here, follow the instructions given in the command prompt or read the additional information below. Note that the image you upload does not necessarily need to be a .tif file, but must be in matrix form, ideally with intensity values between 0 and 1.
+
+The package also contains functions for automatically calculating and extracting Generalised Polarisation (GP) values.
+```{r}
+#Upload images corresponding to ordered and disordered channels.
+ordered_channel <- tiff:readTIFF("C:/Users/user_name/Desktop/image_folder/example_image_1.tif")
+disordered_channel <- tiff:readTIFF("C:/Users/user_name/Desktop/image_folder/example_image_2.tif")
+
+#Get all GP values from line profiles identified by TOBLERONE.
+gp_values <- get_gp_values(ordered_channel, disordered_channel, example_image_name, output_location)
+
+#Get mean GP values from line profiles identified by TOBLERONE.
+mean_gp_values <- get_mean_gp(ordered_channel, disordered_channel, example_image_name, output_location)
+```
 
 ## Algorithm
 This section contains information on how TOBLERONE works. You do not need to know this to use the algorithm, but you may find it useful. The algorithm technically only requires one parameter per image, but offers the ability to segment images into sub-images for more specific analysis. At each stage, the important data will be saved so that, if the algorithm is suddenly cut off, it can be picked up from where it left off without needing to wait again. The algorithmic process is as follows:

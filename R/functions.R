@@ -3,7 +3,6 @@
 #' This function performs TOBLERONE on a given grayscale image. It is recommended
 #' that the image is represented in matrix form with all values between 0 and 1.
 #'
-#'
 #' @param image A matrix representing the image to be analysed.
 #' @param image_name A string representing the name of the image, of which all files will be saved under.
 #' @param output A string denoting the output file location. All results and calculations will be output here.
@@ -339,10 +338,12 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
         }
       }
     }
-    saveRDS(images, paste(output, image_name, "_primary_segmentation.RData", sep = ""))
+    primary_segmentation <- images
+    primary_segmentation[[length(primary_segmentation) + 1]] <- f
+    saveRDS(primary_segmentation, paste(output, image_name, "_primary_segmentation.RData", sep = ""))
     stage <- stage + 1
   } else if(checks[1] == 1){
-    images <- primary_segmentation
+    images <- primary_segmentation[-length(primary_segmentation)]
   }
 
   #Secondary Segmentation
@@ -828,12 +829,18 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
         }
       }
     }
-    saveRDS(new_images, paste(output, image_name, "_secondary_segmentation.RData", sep = ""))
+
+    secondary_segmentation <- new_images
+    secondary_segmentation[[length(secondary_segmentation) + 1]] <- f
+    saveRDS(secondary_segmentation, paste(output, image_name, "_secondary_segmentation.RData", sep = ""))
     saveRDS(windows, paste(output, image_name, "_analysis_windows.RData", sep = ""))
     stage <- stage + 1
   } else if(checks[2] == 1){
-    new_images <- secondary_segmentation
+    new_images <- secondary_segmentation[-length(secondary_segmentation)]
   }
+  #Display the image.
+  grid::grid.newpage()
+  grid::grid.raster(display_image)
 
   #Layer Identification
   #Once all objects have been appropriately re-analysed, construct the new images list.
@@ -1347,4 +1354,264 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
   #Save inputs.
   colnames(inputs) <- c("stage", "input")
   write.csv(inputs, paste(output, image_name, "_input_parameters.csv", sep = ""), row.names = FALSE)
+}
+
+#' Display a segmentation result from TOBLERONE.
+#'
+#' This function plots the objects found from either the primary or
+#' secondary segmentation.
+#'
+#' @param image_name A string representing the name of the image.
+#' @param output A string denoting the output file location. As defined in TOBLERONE, this is the location of the segmentation outputs.
+#' @param stage Set equal to 1 for primary segmentation and 2 for secondary segmentation. Defaults to 1.
+#' @return Displays an image of the whole segmentation.
+#' @export
+display_segmentation <- function(output, image_name, stage = 1, colourblind_palette = FALSE){
+  #Update working directory.
+  setwd(output)
+  #Select segmentation to analyse.
+  if(stage == 1){
+    segmentation_name <- "_primary_segmentation.RData"
+  } else if(stage == 2){
+    segmentation_name <- "_secondary_segmentation.RData"
+  } else {
+    stop("Please enter a valid stage number (1 for primary, 2 for secondary).")
+  }
+  #Get file names.
+  file_names <- list.files(pattern = image_name)
+  #Check if primary segmentation exists.
+  if(paste(image_name, segmentation_name, sep = "") %in% file_names){
+    segmentation <- readRDS(paste(output, image_name, segmentation_name, sep = ""))
+    f <- segmentation[[length(segmentation)]]
+    m <- nrow(f)
+    n <- ncol(f)
+    images <- segmentation[-length(segmentation)]
+
+    #Define pre-set RGB colours.
+    if(colourblind_palette){
+      colour_list <- rbind(
+        c(51, 34, 136),
+        c(17, 19, 51),
+        c(68, 170, 153),
+        c(136, 204, 238),
+        c(221, 204, 119),
+        c(204, 102, 119),
+        c(170, 68, 153),
+        c(136, 34, 85)
+      ) / 255
+    } else {
+      colour_list <- rbind(
+        c(255, 153, 153),
+        c(255, 204, 153),
+        c(255, 255, 153),
+        c(153, 255, 153),
+        c(153, 255, 255),
+        c(153, 153, 255),
+        c(204, 153, 255),
+        c(255, 153, 204)
+      ) / 255
+    }
+    adjacent_colour <- c(2,3,4,5,6,7,8,1)
+    current_colour <- 1
+
+    #Set up colour image.
+    whole_colour <- array(f, dim = c(m, n, 3))
+
+    #Add objects to colour image.
+    for(image in images){
+      #Update colours.
+      cols <- colour_list[current_colour,]
+      current_colour <- adjacent_colour[current_colour]
+      #Fill images.
+      for(i in 1:m){
+        for(j in 1:n){
+          if(image[i,j] == 1){
+            whole_colour[i,j,] <- cols
+          }
+        }
+      }
+    }
+    #Display whole colour image.
+    grid::grid.newpage()
+    grid::grid.raster(whole_colour)
+  } else {
+    #Output error message.
+    stop("Segmentation not found.")
+  }
+}
+
+#' Display all boundaries found on a given image.
+#'
+#' This function plots the boundaries of all objects found from TOBLERONE.
+#'
+#' @param image_name A string representing the name of the image.
+#' @param output A string denoting the output file location. As defined in TOBLERONE, this is the location of the segmentation outputs.
+#' @param colour A vector of length 3 representing the RGB colour code that defines the colour of the displayed loops. Defaults to red.
+#' @return Displays an image of the boundaries found from TOBLERONE.
+#' @export
+display_boundaries <- function(output, image_name, colour = c(255, 0, 0)){
+  #Update working directory.
+  setwd(output)
+  #Get file names.
+  file_names <- list.files(pattern = paste(image_name, "_loop_image_", sep = ""))
+  #Check if at least one loop exists.
+  if(paste(image_name, "_loop_image_1.tif", sep = "") %in% file_names){
+    #Set up colour image.
+    whole_colour <- tiff::readTIFF(paste(image_name, "_loop_image_1.tif", sep = ""))
+
+    #Determine number of loops.
+    number_of_loops <- length(file_names)
+
+    #Add objects to colour image.
+    if(max(colour) > 255 || min(colour) < 0){
+      stop("Colour must be RGB with all values between 0 and 255.")
+    } else {
+      #Update colour code.
+      colour <- colour / 255
+
+      #Add each loop to image if it exists.
+      for(i in 1:number_of_loops){
+        #Try to find loop.
+        loop_name <- list.files(pattern = paste(image_name, "_loop_", i, sep = ""))
+        #If loop is found, read it and add to image.
+        if(length(loop_name) > 0){
+          loop <- read.csv(paste(image_name, "_loop_", i, ".csv", sep = ""))
+          for(j in 1:nrow(loop)){
+            whole_colour[loop[j,1], loop[j,2], ] <- colour
+          }
+        }
+      }
+
+      #Display whole colour image.
+      grid::grid.newpage()
+      grid::grid.raster(whole_colour)
+    }
+  } else {
+    #Output error message.
+    stop("No boundaries found.")
+  }
+}
+
+#' Calculates the Generalised Polarisation (GP) image of two given images.
+#'
+#' @param image_1 A matrix representing the first image (preferably ordered channel).
+#' @param image_2 A matrix representing the second image (preferably disordered channel).
+#' @param normalise Boolean value dictating whether GP values should be normalised between 0 and 1. Defaults to FALSE.
+#' @param display Boolean value dictating whether GP image will be displayed. Defaults to FALSE.
+#' @return The GP image in matrix form.
+#' @export
+create_gp_image <- function(image_1, image_2, normalise = FALSE, display = FALSE){
+  #Get rows and columns.
+  m <- nrow(image_1)
+  n <- ncol(image_1)
+  if(m == nrow(image_2) && n == nrow(image_2)){
+    gp_image <- matrix(0L, nrow = m, ncol = n)
+    for(i in 1:m){
+      for(j in 1:n){
+        sum <- image_1[i,j] + image_2[i,j]
+        if(sum == 0){
+          gp_image[i,j] <- 0
+        } else {
+          gp_image[i,j] <- (image_1[i,j] - image_2[i,j]) / sum
+        }
+      }
+    }
+    if(normalise){
+      if(min(gp_image) == max(gp_image)){
+        gp_image <- matrix(0L, nrow = m, ncol = n)
+      } else {
+        gp_image <- (gp_image - min(gp_image)) / (max(gp_image) - min(gp_image))
+      }
+    }
+    if(display){
+      if(min(gp_image) == max(gp_image)){
+        normalised_gp_image <- matrix(0L, nrow = m, ncol = n)
+      } else {
+        normalised_gp_image <- (gp_image - min(gp_image)) / (max(gp_image) - min(gp_image))
+      }
+      grid::grid.newpage()
+      grid::grid.raster(normalised_gp_image)
+    }
+    return(gp_image)
+  } else {
+    stop("Image sizes do not match.")
+  }
+}
+
+#' Calculates the Generalised Polarisation (GP) image of returns the GP values along the line profiles identified by TOBLERONE.
+#'
+#' @param image_1 A matrix representing the first image (preferably ordered channel).
+#' @param image_2 A matrix representing the second image (preferably disordered channel).
+#' @param image_name A string representing the name of the image originally used in TOBLERONE.
+#' @param output A string denoting the output file location as used in TOBLERONE originally.
+#' @return A list of the GP values along the line profiles identified by TOBLERONE.
+#' @export
+get_gp_values <- function(image_1, image_2, image_name, output){
+  #Calculate GP image.
+  gp_image <- create_gp_image(image_1, image_2)
+
+  #Find all loops.
+  setwd(output)
+  #Get file names.
+  file_names <- list.files(pattern = paste(image_name, "_loop_", sep = ""))
+  image_names <- list.files(pattern = paste(image_name, "_loop_image_", sep = ""))
+  file_names <- file_names[!file_names %in% image_names]
+
+  #Iterate over all loop labels.
+  all_gp_values <- list()
+  found <- 0
+  for(loop_label in file_names){
+    #Upload the loop.
+    loop <- read.csv(loop_label)
+    found <- found + 1
+
+    #Create list of GP values.
+    gp_values <- c()
+    for(pixel in 1:nrow(loop)){
+      gp_values <- append(gp_values, gp_image[loop[pixel,1], loop[pixel,2]])
+    }
+
+    #Add mean GP value to list.
+    all_gp_values[[found]] <- gp_values
+  }
+  #Return all mean GP values.
+  return(all_gp_values)
+}
+
+#' Calculates the Generalised Polarisation (GP) image of two given images and takes the mean GP value of each loop.
+#'
+#' @param image_1 A matrix representing the first image (preferably ordered channel).
+#' @param image_2 A matrix representing the second image (preferably disordered channel).
+#' @param image_name A string representing the name of the image originally used in TOBLERONE.
+#' @param output A string denoting the output file location as used in TOBLERONE originally.
+#' @return A vector of the average GP values from each loop.
+#' @export
+get_mean_gp <- function(image_1, image_2, image_name, output){
+  #Calculate GP image.
+  gp_image <- create_gp_image(image_1, image_2)
+
+  #Find all loops.
+  setwd(output)
+  #Get file names.
+  file_names <- list.files(pattern = paste(image_name, "_loop_", sep = ""))
+  image_names <- list.files(pattern = paste(image_name, "_loop_image_", sep = ""))
+  file_names <- file_names[!file_names %in% image_names]
+
+  #Iterate over all loop labels.
+  mean_gp_values <- c()
+  for(loop_label in file_names){
+    #Upload the loop.
+    loop <- read.csv(loop_label)
+
+    #Create list of GP values.
+    gp_values <- c()
+    for(pixel in 1:nrow(loop)){
+      gp_values <- append(gp_values, gp_image[loop[pixel,1], loop[pixel,2]])
+    }
+
+    #Add mean GP value to list.
+    mean_gp_values <- append(mean_gp_values, mean(gp_values))
+  }
+  #Return all mean GP values.
+  return(mean_gp_values)
 }
