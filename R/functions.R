@@ -9,7 +9,8 @@
 #' @return A set of images and "loop" csv files corresponding to the pixel coordinates of the boundaries found by TOBLERONE.
 #' @export
 toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_decomposition = TRUE, check_objects = TRUE,
-                      base_window_size = 1, identify_boundary = TRUE, smooth_image = TRUE, colourblind_palette = FALSE){
+                      base_window_size = 1, identify_boundary = TRUE, smooth_image = TRUE, colourblind_palette = FALSE,
+                      brightness_scale = 1){
   #Define empty inputs list.
   inputs <- data.frame()
 
@@ -43,10 +44,18 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
   offsets <- cbind(c(-1, -1, 0, 1, 1, 1, 0, -1), c(0, -1, -1, -1, 0, 1, 1, 1))
 
   #Generate filtrations matrix and coordinates data frame.
-  #Upload image, which represents the density function, f.
+  #Upload image, which represents the density function, f. Adjust brightness and normalise.
+  m <- nrow(image)
+  n <- ncol(image)
+  image <- image * brightness_scale
+  for(i in 1:m){
+    for(j in 1:n){
+      if(image[i,j] > 1){
+        image[i,j] <- 1
+      }
+    }
+  }
   f <- image/max(image)
-  m <- nrow(f)
-  n <- ncol(f)
   grid::grid.newpage()
   grid::grid.raster(f)
 
@@ -342,6 +351,9 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
     primary_segmentation[[length(primary_segmentation) + 1]] <- f
     saveRDS(primary_segmentation, paste(output, image_name, "_primary_segmentation.RData", sep = ""))
     stage <- stage + 1
+    #Save inputs.
+    colnames(inputs) <- c("stage", "input")
+    write.csv(inputs, paste(output, image_name, "_input_parameters.csv", sep = ""), row.names = FALSE)
   } else if(checks[1] == 1){
     images <- primary_segmentation[-length(primary_segmentation)]
   }
@@ -830,11 +842,82 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
       }
     }
 
+    #Smooth images.
+    if(smooth_image){
+      updated_images <- list()
+      updated_images_found <- 0
+      updated_windows <- list()
+      adjacent_pixels <- cbind(c(0,-1,0,1), c(1,0,-1,0))
+      for(i in 1:length(new_images)){
+        #Extract image and window.
+        image_to_change <- new_images[[i]]
+        current_window <- windows[[i]]
+        current_i_min <- current_window[1,1] + 1
+        current_i_max <- current_window[1,2] + 1
+        current_j_min <- current_window[2,1] + 1
+        current_j_max <- current_window[2,2] + 1
+        #Create filler rows and columns.
+        image_to_change <- cbind(0, rbind(0, image_to_change, 0), 0)
+        changed <- TRUE
+        while(changed){
+          changed <- FALSE
+          for(k in current_i_min:current_i_max){
+            for(l in current_j_min:current_j_max){
+              if(image_to_change[k,l] == 1){
+                total <- 0
+                for(p in 1:4){
+                  if(image_to_change[k + adjacent_pixels[p,1],l + adjacent_pixels[p,2]] == 0){
+                    total <- total + 1
+                  }
+                }
+                if(total >= 3){
+                  image_to_change[k,l] <- 0
+                  changed <- TRUE
+                }
+              }
+            }
+          }
+        }
+        #Check changed image. If it contains more than one connected component, split image.
+        #Check through all pixels.
+        for(k in current_i_min:current_i_max){
+          for(l in current_j_min:current_j_max){
+            if(image_to_change[k,l] == 1){
+              #If an active pixel is found, initialise a new image and copy over all connected pixels.
+              updated_images_found <- updated_images_found + 1
+              image_to_change[k,l] <- 0
+              updated_image <- matrix(0L, nrow = m, ncol = n)
+              pixels_to_check <- data.frame(k, l)
+              while(nrow(pixels_to_check) > 0){
+                #Add current pixel to updated image.
+                updated_image[pixels_to_check[1,1] - 1, pixels_to_check[1,2] - 1] <- 1
+                for(o in 1:8){
+                  if(image_to_change[pixels_to_check[1,1] + offsets[o,1], pixels_to_check[1,2] + offsets[o,2]] == 1){
+                    pixels_to_check <- rbind(pixels_to_check, c(pixels_to_check[1,1] + offsets[o,1], pixels_to_check[1,2] + offsets[o,2]))
+                    image_to_change[pixels_to_check[1,1] + offsets[o,1], pixels_to_check[1,2] + offsets[o,2]] <- 0
+                  }
+                }
+                pixels_to_check <- pixels_to_check[-1,]
+              }
+              #Add updated image to list.
+              updated_images[[updated_images_found]] <- updated_image
+              updated_windows[[updated_images_found]] <- windows[[i]]
+            }
+          }
+        }
+      }
+    }
+    #Save secondary segmentation.
+    new_images <- updated_images
+    windows <- updated_windows
     secondary_segmentation <- new_images
     secondary_segmentation[[length(secondary_segmentation) + 1]] <- f
     saveRDS(secondary_segmentation, paste(output, image_name, "_secondary_segmentation.RData", sep = ""))
     saveRDS(windows, paste(output, image_name, "_analysis_windows.RData", sep = ""))
     stage <- stage + 1
+    #Save inputs.
+    colnames(inputs) <- c("stage", "input")
+    write.csv(inputs, paste(output, image_name, "_input_parameters.csv", sep = ""), row.names = FALSE)
   } else if(checks[2] == 1){
     new_images <- secondary_segmentation[-length(secondary_segmentation)]
   }
@@ -856,7 +939,6 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
       #Define next squares and adjacent squares.
       next_squares <- c(7,8,1,2,3,4,5,6)
       adjacent_squares <- c(2,3,4,5,6,7,8,1)
-      adjacent_pixels <- cbind(c(0,-1,0,1), c(1,0,-1,0))
       #If there are no images left (all have been deleted), stop.
       images_available <- TRUE
       number_of_images <- length(images)
@@ -879,30 +961,6 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
           image <- rbind(0, cbind(0, image[i_min:i_max, j_min:j_max], 0), 0)
           new_m <- i_max - i_min + 2
           new_n <- j_max - j_min + 2
-
-          #Smooth image.
-          if(smooth_image){
-            changed <- TRUE
-            while(changed){
-              changed <- FALSE
-              for(k in 2:new_m){
-                for(l in 2:new_n){
-                  if(image[k,l] == 1){
-                    total <- 0
-                    for(p in 1:4){
-                      if(image[k + adjacent_pixels[p,1],l + adjacent_pixels[p,2]] == 0){
-                        total <- total + 1
-                      }
-                    }
-                    if(total >= 3){
-                      image[k,l] <- 0
-                      changed <- TRUE
-                    }
-                  }
-                }
-              }
-            }
-          }
 
           #Find loops.
           for(k in 2:new_m){
@@ -1011,7 +1069,7 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
         layer_loops <- list()
         #For each good loop, create a list in layer loops to store that loop and all loops inside it. For each loop,
         #keep adding all adjacent pixels as there own loop until no more are found.
-        for(i in 1:found){
+        for(i in 1:length(images)){
           #Create list containing original loop.
           layer_loops[[i]] <- list(good_loops[[i]])
           counter <- 1
@@ -1293,6 +1351,7 @@ toblerone <- function(image, image_name, output, failsafe = TRUE, use_image_deco
             #Take input.
             input <- readline(prompt = "Enter number, type Y if finished or type N to discard: ")
             inputs <- rbind(inputs, c(4, input))
+            #current_loops <- list(current_loop)
             if(tolower(input) == "y"){
               #Add loop to final loops list.
               for(current_loop in current_loops){
