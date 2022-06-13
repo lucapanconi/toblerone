@@ -4,6 +4,6 @@
 #' and disordered channel. Images are given in matrix form.
 #'
 #' @format A list containing two matrices.
-#' 
+#'
 #' @source <https://www.github.com/lucapanconi/toblerone>
-"R265"
+"R265_example"
