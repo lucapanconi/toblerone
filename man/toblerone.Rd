@@ -14,7 +14,8 @@ toblerone(
   base_window_size = 1,
   identify_boundary = TRUE,
   smooth_image = TRUE,
-  colourblind_palette = FALSE
+  colourblind_palette = FALSE,
+  brightness_scale = 1
 )
 }
 \arguments{
