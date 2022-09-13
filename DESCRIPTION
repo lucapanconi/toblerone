@@ -1,6 +1,6 @@
 Package: toblerone
 Title: Topological Boundary Line Estimation using Recurrence of Neighbouring Emissions
-Version: 0.0.0.9000
+Version: 1.0.0.0000
 Authors@R: 
     person(given = "Luca",
            family = "Panconi",
